@@ -438,3 +438,116 @@ pkill -f "/Applications/Claude.app/Contents/Helpers/chrome-native-host"
 - #20546 - 同様の競合問題
 - #20341 - Windows での競合
 - #21363 - Windows Named Pipe EADDRINUSE エラー
+
+---
+
+## 根本原因の発見（2026-02-02）
+
+### 発見: Desktop と Code が同一の Named Pipe 名を使用
+
+Desktop の `chrome-native-host.exe` バイナリを解析した結果、
+**Desktop と Code が全く同じ Named Pipe 名を使用している**ことが判明。
+
+```
+Pipe 名パターン: \\.\pipe\claude-mcp-browser-bridge-{username}
+```
+
+**バイナリ解析で発見した文字列:**
+```
+"claude-mcp-browser-bridge-"
+"\\.\pipe\"
+"Creating Windows named pipe: "
+```
+
+### 競合メカニズム
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Named Pipe 競合の全体像                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Claude Desktop                    Claude Code CLI              │
+│       │                                  │                      │
+│       ▼                                  ▼                      │
+│  chrome-native-host.exe           claude --chrome-native-host   │
+│       │                                  │                      │
+│       └──────────┬───────────────────────┘                      │
+│                  │                                              │
+│                  ▼                                              │
+│    \\.\pipe\claude-mcp-browser-bridge-{username}                │
+│                  │                                              │
+│         ┌───────┴───────┐                                       │
+│         │               │                                       │
+│    先に起動した方    後から起動                                  │
+│    が Pipe を所有    → EADDRINUSE                               │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 問題の影響
+
+1. **Native Host マニフェストの競合**（既知）
+   - 両方が `com.anthropic.claude_browser_extension` を使用
+   - Chrome は後から登録された方に接続
+
+2. **Named Pipe 名の競合**（今回発見）
+   - 両方が同じ Pipe 名を使用
+   - 先に起動した方が Pipe を所有
+   - 後から起動した方は EADDRINUSE エラー
+
+### GitHub Issue への報告提案
+
+**報告すべき内容:**
+
+Issue #20887 への追加情報として、Named Pipe 名の競合を報告する価値がある。
+
+```markdown
+## Additional Finding: Named Pipe Name Collision
+
+Through binary analysis of `chrome-native-host.exe`, I discovered that
+both Claude Desktop and Claude Code use **identical Named Pipe names**:
+
+```
+\\.\pipe\claude-mcp-browser-bridge-{username}
+```
+
+This means:
+1. Whichever app starts first owns the pipe
+2. The second app fails with EADDRINUSE
+3. Even if manifest conflict is resolved, pipe conflict remains
+
+### Evidence
+
+Strings extracted from Desktop's `chrome-native-host.exe`:
+- `"claude-mcp-browser-bridge-"`
+- `"\\.\pipe\"`
+- `"Creating Windows named pipe: "`
+
+### Suggested Fix
+
+Each product should use a unique pipe name:
+- Desktop: `claude-desktop-browser-bridge-{username}`
+- Code: `claude-code-browser-bridge-{username}`
+
+Or implement a shared broker service that both can connect to.
+```
+
+### 診断ツール
+
+この発見を支援するツールを作成:
+
+```bash
+# Named Pipe 探索
+node scripts/discover-pipes.js
+
+# リアルタイム監視
+node scripts/discover-pipes.js --watch
+```
+
+### 解決策の方向性
+
+| 方向性 | 実現可能性 | 備考 |
+|--------|------------|------|
+| Anthropic による修正 | 待ち | Pipe 名を分離すれば解決 |
+| Proxy による制御 | 可能 | どちらか一方を停止する必要あり |
+| 共存は不可能 | 確定 | 同じ Pipe 名である限り |
