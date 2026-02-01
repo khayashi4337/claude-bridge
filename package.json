@@ -1,30 +1,46 @@
 {
   "name": "claude-bridge",
   "version": "0.1.0",
-  "description": "Chrome拡張とClaude製品の接続を制御するプロキシシステム",
+  "description": "Proxy system to control connection between Chrome extension and Claude products (Desktop/CLI)",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "claude-bridge": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --outfile=dist/index.js",
     "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --target=node18 --outfile=dist/cli/index.js",
-    "build:all": "npm run build && npm run build:cli",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build:all": "npm run build && npm run build:cli && npm run build:types",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "install:host": "ts-node scripts/install-host.ts",
-    "uninstall:host": "ts-node scripts/uninstall-host.ts"
+    "prepublishOnly": "npm run clean && npm run build:all && npm run test"
   },
   "keywords": [
     "claude",
+    "anthropic",
     "chrome-extension",
     "native-messaging",
-    "bridge"
+    "bridge",
+    "proxy",
+    "cli"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/claude-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anthropics/claude-bridge/issues"
+  },
+  "homepage": "https://github.com/anthropics/claude-bridge#readme",
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",

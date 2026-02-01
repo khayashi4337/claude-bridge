@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { ConfigManager } from '../../config';
 import { createConnector } from '../../ipc';
 import { createDetector } from '../../detector';
+import { createInstaller } from '../../installer';
 
 /**
  * Status コマンドを作成
@@ -24,13 +25,17 @@ export function createStatusCommand(): Command {
       const connector = createConnector();
       const detector = createDetector(connector, config);
 
+      // インストール状態を確認
+      const installer = createInstaller();
+      const isInstalled = await installer.isInstalled('com.anthropic.claude_bridge');
+
       const detection = await detector.detectAll();
 
       if (options.json) {
         // JSON 出力
         console.log(JSON.stringify({
           bridge: {
-            installed: true,
+            installed: isInstalled,
             running: false,
           },
           config: {
@@ -79,7 +84,7 @@ export function createStatusCommand(): Command {
       }
 
       box('Claude Bridge Status', [
-        `Bridge:      installed ✓`,
+        `Bridge:      ${isInstalled ? 'installed ✓' : 'not installed ✗'}`,
         `Running:     no`,
         `Target:      ${currentTarget}`,
       ]);

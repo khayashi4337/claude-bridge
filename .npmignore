@@ -1,0 +1,32 @@
+# Source files
+src/
+scripts/
+docs/
+
+# Config files
+tsconfig.json
+jest.config.js
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+logs/
+*.log
+*.jsonl
+
+# Test
+coverage/
+*.test.ts
+
+# Development
+node_modules/
+.env
+.env.local
+
+# Claude
+.claude/
+CLAUDE.md

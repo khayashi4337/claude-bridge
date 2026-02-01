@@ -29,6 +29,8 @@ class IpcConnectionImpl extends EventEmitter implements IpcConnection {
   constructor(private readonly target: Target) {
     super();
     this.parser = new MessageParser();
+    // デフォルトのエラーハンドラで unhandled error を防止
+    this.on('error', () => {});
   }
 
   /**
@@ -36,25 +38,33 @@ class IpcConnectionImpl extends EventEmitter implements IpcConnection {
    */
   async connect(path: string, timeout: number): Promise<void> {
     return new Promise((resolve, reject) => {
+      let settled = false;
+
       const timer = setTimeout(() => {
-        if (this.socket) {
-          this.socket.destroy();
+        if (!settled) {
+          settled = true;
+          if (this.socket) {
+            this.socket.destroy();
+          }
+          reject(
+            new BridgeError(
+              `Connection timeout to ${path}`,
+              ErrorCodes.TIMEOUT,
+              true
+            )
+          );
         }
-        reject(
-          new BridgeError(
-            `Connection timeout to ${path}`,
-            ErrorCodes.TIMEOUT,
-            true
-          )
-        );
       }, timeout);
 
       this.socket = net.createConnection(path);
 
       this.socket.on('connect', () => {
-        clearTimeout(timer);
-        this.connected = true;
-        resolve();
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          this.connected = true;
+          resolve();
+        }
       });
 
       this.socket.on('data', this.handleData.bind(this));
@@ -75,10 +85,13 @@ class IpcConnectionImpl extends EventEmitter implements IpcConnection {
           error
         );
 
-        if (!this.socket?.connecting) {
-          this.emit('error', bridgeError);
-        } else {
+        if (!settled) {
+          // Promise がまだ解決されていない場合は reject
+          settled = true;
           reject(bridgeError);
+        } else {
+          // 接続後のエラーは emit
+          this.emit('error', bridgeError);
         }
       });
     });
