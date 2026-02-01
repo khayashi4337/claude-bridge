@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import { ConfigManager } from '../../config';
-import { createConnector } from '../../ipc';
+import { createProcessConnector } from '../../process';
 import { createDetector } from '../../detector';
 import { createInstaller } from '../../installer';
 
@@ -22,7 +22,7 @@ export function createStatusCommand(): Command {
       await configManager.load();
       const config = configManager.getConfig();
 
-      const connector = createConnector();
+      const connector = createProcessConnector();
       const detector = createDetector(connector, config);
 
       // インストール状態を確認

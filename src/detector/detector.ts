@@ -3,8 +3,8 @@
  */
 
 import { Target } from '../types';
-import { IpcConnector } from '../types';
 import { BridgeConfig } from '../config';
+import { ProcessConnector } from '../process';
 import { ProcessInfo, HealthStatus, DetectionResult, CacheEntry } from './types';
 
 /**
@@ -17,7 +17,7 @@ export abstract class ProcessDetector {
   private watchInterval: NodeJS.Timeout | null = null;
 
   constructor(
-    protected readonly connector: IpcConnector,
+    protected readonly connector: ProcessConnector,
     protected readonly config: BridgeConfig
   ) {}
 
@@ -39,30 +39,21 @@ export abstract class ProcessDetector {
     // プロセス検出
     const processInfo = await this.detectProcess(target);
 
+    // Native Host の存在確認
+    const hostExists = this.connector.exists(target);
+
     const status: HealthStatus = {
       target,
       processRunning: processInfo.running,
-      ipcConnectable: false,
+      ipcConnectable: hostExists,  // Native Host が存在すれば接続可能
       lastChecked: new Date(),
     };
 
-    // プロセスが実行中の場合、IPC 接続を試行
-    if (processInfo.running) {
-      try {
-        const startTime = Date.now();
-        const connection = await this.connector.connect({
-          target,
-          timeout: this.config.timeouts.healthCheck,
-        });
-
-        status.ipcConnectable = true;
-        status.responseTime = Date.now() - startTime;
-
-        await connection.close();
-      } catch (error) {
-        status.ipcConnectable = false;
-        status.error = error instanceof Error ? error.message : 'Connection failed';
-      }
+    if (!hostExists) {
+      const hostPath = this.connector.getPath(target);
+      status.error = hostPath
+        ? `Native host not found: ${hostPath}`
+        : `No native host configured for ${target}`;
     }
 
     // キャッシュを更新

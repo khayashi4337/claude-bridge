@@ -10,7 +10,7 @@ import * as os from 'os';
 import { Target, NativeMessage, IpcMessage } from '../types';
 import { BridgeError, ErrorCodes } from '../types';
 import { NativeHost } from '../host';
-import { createConnector } from '../ipc';
+import { createProcessConnector } from '../process';
 import { ConfigManager, BridgeConfig } from '../config';
 import { createDetector, DetectionResult } from '../detector';
 import { Router, ConnectionManager } from '../router';
@@ -95,7 +95,7 @@ export class RoutedBridge extends EventEmitter {
     this.host = new NativeHost();
     this.configManager = new ConfigManager({ configPath: options.configPath });
 
-    const connector = createConnector();
+    const connector = createProcessConnector();
 
     // ダミーの config で初期化（start 時に実際の config をロード）
     const dummyConfig: BridgeConfig = {

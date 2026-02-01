@@ -73,8 +73,45 @@ export interface IpcConnector {
 }
 
 /**
- * IPC パス定義
- * OS ごとの接続先パス
+ * Native Host 実行ファイルパス定義
+ * OS ごとの Native Messaging Host 実行ファイルパス
+ */
+export interface NativeHostPaths {
+  desktop: string | null;
+  cli: string | null;
+}
+
+/**
+ * Native Host パスを検出
+ */
+export function detectNativeHostPaths(): NativeHostPaths {
+  const platform = process.platform;
+  const homedir = process.env.HOME || process.env.USERPROFILE || '';
+
+  if (platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || '';
+
+    return {
+      // Claude Desktop: C:\Users\{user}\AppData\Local\AnthropicClaude\app-*\resources\chrome-native-host.exe
+      desktop: localAppData ? `${localAppData}\\AnthropicClaude` : null,
+      // Claude Code: C:\Users\{user}\.claude\chrome\chrome-native-host.bat
+      cli: homedir ? `${homedir}\\.claude\\chrome\\chrome-native-host.bat` : null,
+    };
+  } else if (platform === 'darwin') {
+    return {
+      // Claude Desktop: ~/Library/Application Support/Claude/ChromeNativeHost
+      desktop: `${homedir}/Library/Application Support/Claude/ChromeNativeHost`,
+      // Claude Code: ~/.claude/chrome/chrome-native-host
+      cli: `${homedir}/.claude/chrome/chrome-native-host`,
+    };
+  }
+
+  return { desktop: null, cli: null };
+}
+
+/**
+ * IPC パス定義 (後方互換性のため残す)
+ * @deprecated Use detectNativeHostPaths instead
  */
 export const IpcPaths: Record<'win32' | 'darwin', Record<Target, string>> = {
   win32: {
@@ -89,6 +126,7 @@ export const IpcPaths: Record<'win32' | 'darwin', Record<Target, string>> = {
 
 /**
  * 現在の OS に対応したパスを取得
+ * @deprecated Use detectNativeHostPaths instead
  */
 export function getIpcPath(target: Target, customPath?: string): string {
   if (customPath) return customPath;

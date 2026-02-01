@@ -2,8 +2,8 @@
  * Detector モジュール
  */
 
-import { IpcConnector } from '../types';
 import { BridgeConfig } from '../config';
+import { ProcessConnector } from '../process';
 import { ProcessDetector } from './detector';
 import { WindowsDetector } from './windows';
 import { DarwinDetector } from './darwin';
@@ -17,7 +17,7 @@ export * from './darwin';
  * 現在の OS に対応した Detector を作成
  */
 export function createDetector(
-  connector: IpcConnector,
+  connector: ProcessConnector,
   config: BridgeConfig
 ): ProcessDetector {
   if (process.platform === 'win32') {

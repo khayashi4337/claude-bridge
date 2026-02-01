@@ -31,9 +31,20 @@ export class WindowsInstaller {
     // マニフェストディレクトリを作成
     await fs.promises.mkdir(this.manifestDir, { recursive: true });
 
+    // ランチャーバッチファイルを作成（Windows では .js を直接実行できない）
+    const launcherPath = path.join(this.manifestDir, `${manifest.name}.bat`);
+    const launcherContent = `@echo off\r\nnode "${manifest.path}" %*\r\n`;
+    await fs.promises.writeFile(launcherPath, launcherContent, 'utf8');
+
+    // マニフェストのパスをバッチファイルに変更
+    const manifestWithLauncher: NativeHostManifest = {
+      ...manifest,
+      path: launcherPath,
+    };
+
     // マニフェストファイルを書き込み
     const manifestPath = path.join(this.manifestDir, `${manifest.name}.json`);
-    await fs.promises.writeFile(manifestPath, serializeManifest(manifest), 'utf8');
+    await fs.promises.writeFile(manifestPath, serializeManifest(manifestWithLauncher), 'utf8');
 
     // レジストリに登録
     const regPath = `${REGISTRY_BASE}\\${manifest.name}`;
@@ -65,6 +76,14 @@ export class WindowsInstaller {
     const manifestPath = path.join(this.manifestDir, `${hostName}.json`);
     try {
       await fs.promises.unlink(manifestPath);
+    } catch {
+      // ファイルが存在しない場合は無視
+    }
+
+    // ランチャーバッチファイルを削除
+    const launcherPath = path.join(this.manifestDir, `${hostName}.bat`);
+    try {
+      await fs.promises.unlink(launcherPath);
     } catch {
       // ファイルが存在しない場合は無視
     }
