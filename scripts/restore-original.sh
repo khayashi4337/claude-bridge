@@ -1,8 +1,10 @@
 #!/bin/bash
 # 元の Desktop Native Host に戻す
 
-BACKUP="/c/Users/kh/AppData/Roaming/claude-bridge/backup/original-manifest.json"
-TARGET="/c/Users/kh/AppData/Roaming/Claude/ChromeNativeHost/com.anthropic.claude_browser_extension.json"
+# ユーザーのホームディレクトリを使用
+APPDATA="${APPDATA:-$HOME/AppData/Roaming}"
+BACKUP="$APPDATA/claude-bridge/backup/original-manifest.json"
+TARGET="$APPDATA/Claude/ChromeNativeHost/com.anthropic.claude_browser_extension.json"
 
 if [ -f "$BACKUP" ]; then
   cp "$BACKUP" "$TARGET"

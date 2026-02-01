@@ -15,8 +15,29 @@ const SCRIPTS_DIR = __dirname;
 const CONFIG_DIR = path.join(process.env.APPDATA || os.homedir(), 'claude-bridge');
 const BACKUP_DIR = path.join(CONFIG_DIR, 'backup');
 const DESKTOP_MANIFEST = path.join(process.env.APPDATA, 'Claude', 'ChromeNativeHost', 'com.anthropic.claude_browser_extension.json');
-const CODE_NATIVE_HOST = 'C:\\Users\\kh\\.claude\\chrome\\chrome-native-host.bat';
-const DESKTOP_NATIVE_HOST = 'C:\\Users\\kh\\AppData\\Local\\AnthropicClaude\\app-1.1.1520\\resources\\chrome-native-host.exe';
+const CODE_NATIVE_HOST = path.join(os.homedir(), '.claude', 'chrome', 'chrome-native-host.bat');
+const DESKTOP_NATIVE_HOST_DIR = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AnthropicClaude');
+
+// Desktop のバージョンを動的に検出
+function getDesktopNativeHost() {
+  try {
+    const apps = fs.readdirSync(DESKTOP_NATIVE_HOST_DIR).filter(d => d.startsWith('app-')).sort().reverse();
+    if (apps.length > 0) {
+      return path.join(DESKTOP_NATIVE_HOST_DIR, apps[0], 'resources', 'chrome-native-host.exe');
+    }
+  } catch {}
+  return null;
+}
+
+function getDesktopExe() {
+  try {
+    const apps = fs.readdirSync(DESKTOP_NATIVE_HOST_DIR).filter(d => d.startsWith('app-')).sort().reverse();
+    if (apps.length > 0) {
+      return path.join(DESKTOP_NATIVE_HOST_DIR, apps[0], 'claude.exe');
+    }
+  } catch {}
+  return null;
+}
 
 // 色定義
 const colors = {
@@ -66,7 +87,12 @@ function setTarget(target) {
     if (target === 'code') {
       manifest.path = CODE_NATIVE_HOST;
     } else {
-      manifest.path = DESKTOP_NATIVE_HOST;
+      const desktopHost = getDesktopNativeHost();
+      if (!desktopHost) {
+        console.log(color('red', 'エラー: Claude Desktop が見つかりません'));
+        return false;
+      }
+      manifest.path = desktopHost;
     }
     fs.writeFileSync(DESKTOP_MANIFEST, JSON.stringify(manifest, null, 2));
     return true;
@@ -164,11 +190,13 @@ async function executeAction(choice) {
 
     case '7':
       console.log(color('bright', '--- Claude Desktop 起動 ---\n'));
-      spawn('C:\\Users\\kh\\AppData\\Local\\AnthropicClaude\\app-1.1.1520\\claude.exe',
-        [],
-        { detached: true, stdio: 'ignore' }
-      ).unref();
-      console.log(color('green', '✅ Claude Desktop を起動しました'));
+      const desktopExe = getDesktopExe();
+      if (desktopExe && fs.existsSync(desktopExe)) {
+        spawn(desktopExe, [], { detached: true, stdio: 'ignore' }).unref();
+        console.log(color('green', '✅ Claude Desktop を起動しました'));
+      } else {
+        console.log(color('red', '❌ Claude Desktop が見つかりません'));
+      }
       break;
 
     case '8':

@@ -6,7 +6,13 @@
 EXTENSION_ID="fcoeoabgfenejglbffodgkkbkcdhcgfn"
 EXTENSION_NAME="Claude in Chrome"
 PROFILE="Profile 1"
-PREFS_PATH="/c/Users/kh/AppData/Local/Google/Chrome/User Data/${PROFILE}/Secure Preferences"
+# Windows と Unix 両対応
+if [ -n "$LOCALAPPDATA" ]; then
+    CHROME_USER_DATA="$LOCALAPPDATA/Google/Chrome/User Data"
+else
+    CHROME_USER_DATA="$HOME/AppData/Local/Google/Chrome/User Data"
+fi
+PREFS_PATH="$CHROME_USER_DATA/${PROFILE}/Secure Preferences"
 
 # 色定義
 RED='\033[0;31m'

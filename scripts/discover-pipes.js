@@ -120,13 +120,20 @@ function analyzeClaudeProcesses() {
 function analyzeDesktopNativeHost() {
   printSection('3. Desktop Native Host 調査');
 
-  const desktopHostPath = 'C:\\Users\\kh\\AppData\\Local\\AnthropicClaude\\app-1.1.1520\\resources\\chrome-native-host.exe';
+  const baseDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AnthropicClaude');
 
-  if (!fs.existsSync(desktopHostPath)) {
-    console.log(`\nNative Host が見つかりません: ${desktopHostPath}`);
+  // バージョンを動的に検出
+  let desktopHostPath = null;
+  try {
+    const apps = fs.readdirSync(baseDir).filter(d => d.startsWith('app-')).sort().reverse();
+    if (apps.length > 0) {
+      desktopHostPath = path.join(baseDir, apps[0], 'resources', 'chrome-native-host.exe');
+    }
+  } catch {}
 
-    // 別バージョンを探す
-    const baseDir = 'C:\\Users\\kh\\AppData\\Local\\AnthropicClaude';
+  if (!desktopHostPath || !fs.existsSync(desktopHostPath)) {
+    console.log(`\nNative Host が見つかりません`);
+    console.log(`検索場所: ${baseDir}`);
     try {
       const apps = fs.readdirSync(baseDir).filter(d => d.startsWith('app-'));
       if (apps.length > 0) {
@@ -229,6 +236,17 @@ async function diffMode() {
     }
   };
 
+  const getDesktopExe = () => {
+    const baseDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AnthropicClaude');
+    try {
+      const apps = fs.readdirSync(baseDir).filter(d => d.startsWith('app-')).sort().reverse();
+      if (apps.length > 0) {
+        return path.join(baseDir, apps[0], 'claude.exe');
+      }
+    } catch {}
+    return null;
+  };
+
   console.log('╔════════════════════════════════════════════════════════════╗');
   console.log('║           Named Pipe 差分比較モード                        ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
@@ -303,20 +321,25 @@ async function diffMode() {
       await question('Enter で続行...');
     } else if (await confirm('Claude Desktop を起動しますか？')) {
       console.log('');
-      console.log('⏳ Claude Desktop を起動しています...');
-      spawn('C:\\Users\\kh\\AppData\\Local\\AnthropicClaude\\app-1.1.1520\\claude.exe', [], {
-        detached: true,
-        stdio: 'ignore'
-      }).unref();
-
-      console.log('⏳ Pipe 作成を待機中 (3秒)...');
-      await new Promise(r => setTimeout(r, 3000));
-
-      // 起動確認
-      if (isProcessRunning('claude.exe')) {
-        console.log('✅ 起動しました');
+      const desktopExe = getDesktopExe();
+      if (!desktopExe || !fs.existsSync(desktopExe)) {
+        console.log('❌ Claude Desktop が見つかりません');
       } else {
-        console.log('⚠️  起動を確認できませんでした');
+        console.log('⏳ Claude Desktop を起動しています...');
+        spawn(desktopExe, [], {
+          detached: true,
+          stdio: 'ignore'
+        }).unref();
+
+        console.log('⏳ Pipe 作成を待機中 (3秒)...');
+        await new Promise(r => setTimeout(r, 3000));
+
+        // 起動確認
+        if (isProcessRunning('claude.exe')) {
+          console.log('✅ 起動しました');
+        } else {
+          console.log('⚠️  起動を確認できませんでした');
+        }
       }
     }
 
