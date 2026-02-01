@@ -188,32 +188,311 @@ function analyzeDesktopNativeHost() {
 }
 
 // =============================================================================
-// 4. Desktop 起動時の Pipe 変化を監視
+// 4. Pipe 差分比較モード
 // =============================================================================
+
+function getCurrentPipes() {
+  try {
+    const output = execSync(
+      `powershell -Command "[System.IO.Directory]::GetFiles('\\\\.\\pipe\\')" `,
+      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+    );
+    return new Set(output.trim().split('\n').filter(p => p.trim()));
+  } catch {
+    return new Set();
+  }
+}
+
+async function diffMode() {
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const question = (prompt) => new Promise(resolve => rl.question(prompt, resolve));
+
+  const confirm = async (prompt) => {
+    const answer = await question(`${prompt} (Y/n): `);
+    return answer.trim().toLowerCase() !== 'n';
+  };
+
+  const isProcessRunning = (processName) => {
+    try {
+      const output = execSync(`tasklist /FI "IMAGENAME eq ${processName}" /FO CSV 2>nul`, {
+        encoding: 'utf8',
+        stdio: 'pipe'
+      });
+      return output.includes(processName);
+    } catch {
+      return false;
+    }
+  };
+
+  console.log('╔════════════════════════════════════════════════════════════╗');
+  console.log('║           Named Pipe 差分比較モード                        ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+  console.log('');
+  console.log('プロセス起動前後の Named Pipe の差分を検出します。');
+  console.log('');
+
+  // 調査対象の選択
+  console.log('調査対象を選択してください:');
+  console.log('  [1] Claude Desktop の Pipe を調べる');
+  console.log('  [2] 手動モード（自分でプロセスを操作）');
+  console.log('');
+
+  const mode = (await question('選択 (1/2): ')).trim();
+
+  if (mode === '1') {
+    // Desktop 自動モード
+    console.log('');
+
+    // プロセス状態を確認
+    const desktopRunning = isProcessRunning('claude.exe');
+
+    if (desktopRunning) {
+      console.log('📊 状態: Claude Desktop は起動中です');
+      console.log('');
+
+      // Step 1: Desktop を終了
+      if (await confirm('終了して Before スナップショットを取得しますか？')) {
+        console.log('');
+        console.log('⏳ Claude Desktop を終了しています...');
+        try {
+          execSync('taskkill /F /IM claude.exe 2>nul', { encoding: 'utf8', stdio: 'pipe' });
+          console.log('✅ 終了しました');
+        } catch {
+          console.log('⚠️  終了に失敗しました');
+        }
+        // 少し待つ
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    } else {
+      console.log('📊 状態: Claude Desktop は停止中です');
+      console.log('   → Before スナップショットを取得します');
+    }
+
+    // Before スナップショット
+    console.log('');
+    console.log('📸 Before スナップショット取得...');
+    const beforePipes = getCurrentPipes();
+    const beforeClaude = [...beforePipes].filter(p =>
+      p.toLowerCase().includes('claude') ||
+      p.toLowerCase().includes('mcp') ||
+      p.toLowerCase().includes('anthropic')
+    );
+
+    console.log('   現在の Claude 関連 Pipe:');
+    if (beforeClaude.length > 0) {
+      beforeClaude.forEach(p => console.log(`     📌 ${p.replace('\\\\.\\pipe\\', '')}`));
+    } else {
+      console.log('     (なし)');
+    }
+
+    // Step 2: Desktop を起動
+    console.log('');
+
+    // 再度プロセス状態を確認
+    const stillRunning = isProcessRunning('claude.exe');
+
+    if (stillRunning) {
+      console.log('⚠️  Claude Desktop がまだ起動中です');
+      console.log('   差分を正確に取得できない可能性があります');
+      console.log('');
+      await question('Enter で続行...');
+    } else if (await confirm('Claude Desktop を起動しますか？')) {
+      console.log('');
+      console.log('⏳ Claude Desktop を起動しています...');
+      spawn('C:\\Users\\kh\\AppData\\Local\\AnthropicClaude\\app-1.1.1520\\claude.exe', [], {
+        detached: true,
+        stdio: 'ignore'
+      }).unref();
+
+      console.log('⏳ Pipe 作成を待機中 (3秒)...');
+      await new Promise(r => setTimeout(r, 3000));
+
+      // 起動確認
+      if (isProcessRunning('claude.exe')) {
+        console.log('✅ 起動しました');
+      } else {
+        console.log('⚠️  起動を確認できませんでした');
+      }
+    }
+
+    // After スナップショット
+    console.log('');
+    console.log('📸 After スナップショット取得...');
+    const afterPipes = getCurrentPipes();
+    const afterClaude = [...afterPipes].filter(p =>
+      p.toLowerCase().includes('claude') ||
+      p.toLowerCase().includes('mcp') ||
+      p.toLowerCase().includes('anthropic')
+    );
+
+    console.log('   現在の Claude 関連 Pipe:');
+    if (afterClaude.length > 0) {
+      afterClaude.forEach(p => console.log(`     📌 ${p.replace('\\\\.\\pipe\\', '')}`));
+    } else {
+      console.log('     (なし)');
+    }
+
+    // 差分表示へ
+    showDiff(beforePipes, afterPipes, beforeClaude, afterClaude);
+    rl.close();
+    return;
+  }
+
+  // 手動モード
+  console.log('');
+  console.log('手動モード: プロセスを自分で操作してください');
+  console.log('');
+  await question('対象プロセスを終了したら Enter...');
+
+  console.log('');
+  console.log('📸 Before スナップショット取得...');
+  const beforePipes = getCurrentPipes();
+  const beforeClaude = [...beforePipes].filter(p =>
+    p.toLowerCase().includes('claude') ||
+    p.toLowerCase().includes('mcp') ||
+    p.toLowerCase().includes('anthropic')
+  );
+
+  console.log('   現在の Claude 関連 Pipe:');
+  if (beforeClaude.length > 0) {
+    beforeClaude.forEach(p => console.log(`     📌 ${p.replace('\\\\.\\pipe\\', '')}`));
+  } else {
+    console.log('     (なし)');
+  }
+
+  console.log('');
+  await question('対象プロセスを起動したら Enter...');
+
+  console.log('');
+  console.log('📸 After スナップショット取得...');
+  const afterPipes = getCurrentPipes();
+  const afterClaude = [...afterPipes].filter(p =>
+    p.toLowerCase().includes('claude') ||
+    p.toLowerCase().includes('mcp') ||
+    p.toLowerCase().includes('anthropic')
+  );
+
+  console.log('   現在の Claude 関連 Pipe:');
+  if (afterClaude.length > 0) {
+    afterClaude.forEach(p => console.log(`     📌 ${p.replace('\\\\.\\pipe\\', '')}`));
+  } else {
+    console.log('     (なし)');
+  }
+
+  showDiff(beforePipes, afterPipes, beforeClaude, afterClaude);
+  rl.close();
+}
+
+function showDiff(beforePipes, afterPipes, beforeClaude, afterClaude) {
+
+  // 差分表示
+  console.log('');
+  console.log('╔═════════════════════════════════════════════════════════════╗');
+  console.log('║ 結果                                                        ║');
+  console.log('╚═════════════════════════════════════════════════════════════╝');
+
+  // 追加された Pipe
+  const added = [...afterPipes].filter(p => !beforePipes.has(p));
+  const addedClaude = added.filter(p =>
+    p.toLowerCase().includes('claude') ||
+    p.toLowerCase().includes('mcp') ||
+    p.toLowerCase().includes('anthropic')
+  );
+
+  // 削除された Pipe
+  const removed = [...beforePipes].filter(p => !afterPipes.has(p));
+  const removedClaude = removed.filter(p =>
+    p.toLowerCase().includes('claude') ||
+    p.toLowerCase().includes('mcp') ||
+    p.toLowerCase().includes('anthropic')
+  );
+
+  console.log('');
+
+  if (addedClaude.length > 0) {
+    console.log('✅ 追加された Pipe（起動したプロセスが作成）:');
+    console.log('');
+    addedClaude.forEach(p => {
+      const name = p.replace('\\\\.\\pipe\\', '');
+      console.log(`   📌 ${name}`);
+    });
+    console.log('');
+
+    // 競合の警告
+    if (addedClaude.some(p => p.includes('claude-mcp-browser-bridge'))) {
+      console.log('   ⚠️  browser-bridge Pipe が検出されました');
+      console.log('      Desktop と Code は同じ名前を使用するため競合します');
+      console.log('      (GitHub Issue #20887)');
+      console.log('');
+    }
+  }
+
+  if (removedClaude.length > 0) {
+    console.log('❌ 削除された Pipe:');
+    console.log('');
+    removedClaude.forEach(p => {
+      const name = p.replace('\\\\.\\pipe\\', '');
+      console.log(`   📌 ${name}`);
+    });
+    console.log('');
+  }
+
+  if (addedClaude.length === 0 && removedClaude.length === 0) {
+    // 変化なしの場合、詳細な診断を表示
+    const bridgePipeExists = [...afterPipes].some(p => p.includes('claude-mcp-browser-bridge'));
+
+    if (bridgePipeExists) {
+      console.log('⚠️  Claude 関連の変化なし（Pipe は存在）');
+      console.log('');
+      console.log('┌─────────────────────────────────────────────────────────────┐');
+      console.log('│ 💡 診断結果                                                 │');
+      console.log('└─────────────────────────────────────────────────────────────┘');
+      console.log('');
+      console.log('Desktop を終了しても browser-bridge Pipe が残っています。');
+      console.log('これは Claude Code が同じ Pipe を保持していることを示します。');
+      console.log('');
+      console.log('📌 根本原因:');
+      console.log('   Desktop と Code は同じ Pipe 名を使用するため、');
+      console.log('   両方を同時に使用すると競合が発生します。');
+      console.log('   (GitHub Issue #20887)');
+      console.log('');
+      console.log('🔧 対処方法:');
+      console.log('   1. Desktop と Code を同時に使わない');
+      console.log('   2. scripts/menu.js で接続先を切り替える');
+      console.log('   3. Anthropic による修正を待つ');
+      console.log('');
+    } else {
+      console.log('(Claude 関連の変化なし)');
+      console.log('');
+      console.log('💡 考えられる原因:');
+      console.log('   - プロセスが正しく起動/終了していない');
+      console.log('   - Pipe がまだ作成されていない');
+      console.log('');
+    }
+  }
+}
 
 function suggestMonitoring() {
   printSection('4. Pipe 監視方法');
 
   console.log(`
-Desktop が使用する Pipe を特定するための手順:
+利用可能なモード:
 
-1. Claude Desktop を完全に終了
-   - タスクマネージャーで claude.exe を終了
+1. 差分比較モード (推奨)
+   > node scripts/discover-pipes.js --diff
 
-2. 現在の Pipe を記録
-   > node scripts/discover-pipes.js > before.txt
+   対話形式で Before/After の差分を自動計算します。
+   どのプロセスが Pipe を作成しているか特定できます。
 
-3. Claude Desktop を起動
-   - Chrome 拡張経由でも直接起動でも可
-
-4. 新しく出現した Pipe を確認
-   > node scripts/discover-pipes.js > after.txt
-   > diff before.txt after.txt  (または Compare-Object)
-
-5. 差分が Desktop の Pipe
-
-あるいは、リアルタイム監視:
+2. リアルタイム監視モード
    > node scripts/discover-pipes.js --watch
+
+   1秒ごとに Pipe の追加/削除を監視します。
 `);
 }
 
@@ -278,11 +557,37 @@ async function watchMode() {
 async function main() {
   const args = process.argv.slice(2);
 
+  // ヘルプ
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`
+Named Pipe 探索ツール
+
+使い方:
+  node discover-pipes.js           通常モード（一覧表示）
+  node discover-pipes.js --diff    差分比較モード（推奨）
+  node discover-pipes.js --watch   リアルタイム監視モード
+
+オプション:
+  --diff, -d     Before/After の差分を比較
+  --watch, -w    Pipe の追加/削除をリアルタイム監視
+  --help, -h     このヘルプを表示
+`);
+    return;
+  }
+
+  // 差分モード
+  if (args.includes('--diff') || args.includes('-d')) {
+    await diffMode();
+    return;
+  }
+
+  // 監視モード
   if (args.includes('--watch') || args.includes('-w')) {
     await watchMode();
     return;
   }
 
+  // 通常モード
   console.log('╔════════════════════════════════════════════════════════════╗');
   console.log('║           Named Pipe 探索ツール                            ║');
   console.log('╚════════════════════════════════════════════════════════════╝');

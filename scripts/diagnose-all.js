@@ -100,7 +100,13 @@ function diagnoseNativeHosts() {
   const results = [];
 
   for (const hostName of CONFIG.nativeHostNames) {
-    console.log(`\n[${hostName}]`);
+    // ホスト名を分かりやすく表示
+    const displayName = hostName === 'com.anthropic.claude_browser_extension'
+      ? 'Desktop用'
+      : 'Code用';
+
+    console.log(`\n┌─ ${hostName} (${displayName})`);
+    console.log('│');
 
     let manifestPath;
     let registryKey;
@@ -108,14 +114,19 @@ function diagnoseNativeHosts() {
     if (process.platform === 'win32') {
       // Windows: レジストリから取得
       registryKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`;
+      console.log(`│  📋 レジストリキー:`);
+      console.log(`│     ${registryKey}`);
+
       try {
         const output = execSync(`reg query "${registryKey}" /ve 2>nul`, { encoding: 'utf8' });
         const match = output.match(/REG_SZ\s+(.+)/);
         if (match) {
           manifestPath = match[1].trim();
+          console.log(`│     └→ ✅ 登録済み`);
         }
       } catch {
-        printStatus('レジストリ', 'info', '未登録');
+        console.log(`│     └→ ❌ 未登録`);
+        console.log('└─');
         results.push({ name: hostName, status: 'not_registered' });
         continue;
       }
@@ -126,34 +137,61 @@ function diagnoseNativeHosts() {
     }
 
     if (!manifestPath || !fs.existsSync(manifestPath)) {
-      printStatus('マニフェスト', 'info', '見つかりません');
+      console.log(`│  📄 マニフェスト: ❌ 見つかりません`);
+      console.log('└─');
       results.push({ name: hostName, status: 'not_found' });
       continue;
     }
 
-    printStatus('マニフェスト', 'ok', manifestPath);
+    console.log(`│`);
+    console.log(`│  📄 マニフェストファイル:`);
+    console.log(`│     ${manifestPath}`);
 
     try {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      console.log(`   path: ${manifest.path}`);
-      console.log(`   type: ${manifest.type}`);
-      console.log(`   allowed_origins: ${manifest.allowed_origins?.length || 0} 件`);
+
+      console.log(`│`);
+      console.log(`│  🔧 実行ファイル (path):`);
+      console.log(`│     ${manifest.path}`);
 
       // 実行ファイルの存在確認
       if (fs.existsSync(manifest.path)) {
-        printStatus('実行ファイル', 'ok', '存在');
+        console.log(`│     └→ ✅ 存在`);
       } else {
-        printStatus('実行ファイル', 'error', '見つかりません');
+        console.log(`│     └→ ❌ 見つかりません`);
       }
+
+      // 接続先の判定
+      console.log(`│`);
+      let targetType;
+      if (manifest.path.includes('.claude')) {
+        targetType = 'Claude Code';
+        console.log(`│  🎯 接続先: Claude Code`);
+      } else if (manifest.path.includes('AnthropicClaude')) {
+        targetType = 'Claude Desktop';
+        console.log(`│  🎯 接続先: Claude Desktop`);
+      } else {
+        targetType = '不明';
+        console.log(`│  🎯 接続先: 不明`);
+      }
+
+      console.log(`│`);
+      console.log(`│  📋 type: ${manifest.type}`);
+      console.log(`│  📋 allowed_origins: ${manifest.allowed_origins?.length || 0} 件`);
+      console.log('└─');
 
       results.push({
         name: hostName,
         status: 'registered',
         manifest,
+        manifestPath,
+        registryKey,
+        targetType,
         executableExists: fs.existsSync(manifest.path)
       });
     } catch (err) {
-      printStatus('マニフェスト解析', 'error', err.message);
+      console.log(`│  ❌ マニフェスト解析エラー: ${err.message}`);
+      console.log('└─');
       results.push({ name: hostName, status: 'error', reason: err.message });
     }
   }
@@ -173,10 +211,15 @@ function diagnoseNamedPipe() {
     return { status: 'skipped', reason: 'not_windows' };
   }
 
-  const pipePath = `\\\\.\\pipe\\${CONFIG.pipeName}`;
-  console.log(`Pipe 名: ${CONFIG.pipeName}`);
-  console.log(`パス: ${pipePath}`);
-  console.log('');
+  console.log('┌─ Named Pipe 情報');
+  console.log('│');
+  console.log('│  📌 期待される Pipe 名:');
+  console.log(`│     claude-mcp-browser-bridge-${os.userInfo().username}`);
+  console.log('│');
+  console.log('│  💡 説明:');
+  console.log('│     Desktop と Code は同じ Pipe 名を使用するため競合が発生します');
+  console.log('│     (GitHub Issue #20887 参照)');
+  console.log('│');
 
   // Named Pipe の存在確認（PowerShell使用）
   try {
@@ -187,16 +230,34 @@ function diagnoseNamedPipe() {
 
     const pipes = output.trim().split('\n').filter(p => p.trim());
 
+    console.log('│  🔍 検出された Claude 関連 Pipe:');
     if (pipes.length > 0) {
-      printStatus('Claude 関連 Pipe', 'ok', `${pipes.length} 件検出`);
-      pipes.forEach(p => console.log(`   - ${p.trim()}`));
+      pipes.forEach(p => {
+        const pipeName = p.trim().replace('\\\\.\\pipe\\', '');
+        console.log(`│     ✅ ${pipeName}`);
+      });
+      console.log('│');
+
+      // Pipe の所有者を推測
+      const bridgePipe = pipes.find(p => p.includes('claude-mcp-browser-bridge'));
+      if (bridgePipe) {
+        console.log('│  🎯 Browser Bridge Pipe の状態:');
+        console.log('│     アクティブ（CLIまたはDesktopが起動中）');
+      }
+      console.log('└─');
+
       return { status: 'found', pipes };
     } else {
-      printStatus('Claude 関連 Pipe', 'info', '見つかりません（CLIが起動していない可能性）');
+      console.log('│     (なし)');
+      console.log('│');
+      console.log('│  ⚠️  Pipe が見つかりません');
+      console.log('│     → Claude Code CLI または Desktop を起動してください');
+      console.log('└─');
       return { status: 'not_found' };
     }
   } catch (err) {
-    printStatus('Pipe 検索', 'warn', 'タイムアウトまたはエラー');
+    console.log('│  ⚠️  検索エラー/タイムアウト');
+    console.log('└─');
     return { status: 'error', reason: err.message };
   }
 }
@@ -296,10 +357,14 @@ function printSummary(results) {
       action: 'Claude Code または Claude Desktop をインストールしてください'
     });
   } else if (registeredHosts.length > 1) {
+    // 競合の詳細を表示
+    const hostDetails = registeredHosts.map(h =>
+      `     - ${h.name} → ${h.targetType || '不明'}`
+    ).join('\n');
     issues.push({
       severity: 'warn',
-      message: '複数の Native Host が登録されています（競合の可能性）',
-      action: 'docs/investigation-notes.md の回避策を参照してください'
+      message: `複数の Native Host が登録されています（競合の可能性）\n${hostDetails}`,
+      action: 'scripts/menu.js で接続先を切り替えるか、docs/investigation-notes.md を参照'
     });
   }
 
