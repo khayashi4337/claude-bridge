@@ -146,6 +146,127 @@ GitHub Issues で多数の報告が確認された：
 2. Claude CLI / Desktop のソースコード変更を待つ
 3. Chrome 拡張側で接続先を切り替えるUIを追加（拡張の改造が必要）
 
+---
+
+## Named Pipe プロキシの実装（2026-02-01）
+
+### 発見した詳細なアーキテクチャ
+
+```
+Chrome Extension
+    │
+    ▼ Native Messaging (stdin/stdout)
+claude-code --chrome-native-host
+    │
+    ├─▶ stdin/stdout: Chrome との通信
+    │
+    └─▶ Creates Named Pipe: \\.\pipe\claude-mcp-browser-bridge-{user}
+           ▲
+           │ Connects
+    Interactive CLI Session (client)
+```
+
+**重要な発見**:
+- Native Host (`claude-code --chrome-native-host`) が Named Pipe を **作成** する
+- Interactive CLI セッションが Named Pipe に **接続** する（クライアント）
+- 両者が同時に Pipe を作成しようとすると EADDRINUSE エラー
+
+### 競合の原因
+
+現在の Claude Code CLI には以下の問題がある:
+1. Interactive CLI セッションも Named Pipe を作成する
+2. Native Host も同じ名前の Named Pipe を作成しようとする
+3. 同じ名前の Pipe は一つしか存在できない → 競合
+
+### 実装したコンポーネント
+
+#### 1. Named Pipe Proxy (`src/pipe-proxy/proxy.ts`)
+- 別の Pipe 名で待ち受け
+- CLI の Pipe に転送
+
+#### 2. Wrapper Host (`src/pipe-proxy/wrapper-host.ts`)
+- 元の Native Host をラップ
+- 設定に基づいて CLI/Desktop を切り替え
+
+#### 3. Bridge Service (`src/pipe-proxy/service.ts`)
+- バックグラウンドサービスとして動作
+- Named Pipe を所有し、CLI と Native Host の両方を接続
+
+### テスト手順（CLI セッションが起動していない状態で）
+
+```bash
+# 1. サービスを起動
+node dist/service.js
+
+# 2. 別ターミナルで Native Host をテスト
+# (Chrome 拡張から呼ばれた状況をシミュレート)
+node test-wrapper.js
+```
+
+### 制約
+
+- **現在の制限**: Interactive CLI セッションが起動中は、Service は同じ Pipe 名を使用できない
+- **解決策**: CLI セッション起動前に Service を開始する必要がある
+- **根本的問題**: Claude Code のソースを変更できないため、CLI の Pipe 作成動作を変更できない
+
+---
+
+## 成功したアプローチ: Client Host（2026-02-01）
+
+### 発見
+
+元の Native Host が Pipe を **作成** しようとするのに対し、CLI セッションは Pipe を **リッスン** している。
+つまり CLI がサーバー、Native Host がクライアントになるべき構造。
+
+### 解決策: Client Host
+
+Native Host を置き換えて、CLI の Pipe にクライアントとして接続する方式:
+
+```
+Chrome Extension
+    │
+    ▼ Native Messaging (stdin/stdout)
+Client Host (claude-bridge-client-host.bat)
+    │
+    ▼ Named Pipe (client connection)
+CLI's Pipe (\\.\pipe\claude-mcp-browser-bridge-{user})
+    │
+    ▼
+Claude Code CLI (listening)
+```
+
+### 動作確認済み
+
+1. Client Host が CLI の Pipe にクライアントとして接続
+2. Chrome からのメッセージを CLI にリレー
+3. CLI からのレスポンスを Chrome にリレー
+
+### インストール方法
+
+```bash
+# インストール
+node dist/setup.js install
+
+# 状態確認
+node dist/setup.js status
+
+# アンインストール（元に戻す）
+node dist/setup.js uninstall
+```
+
+### ファイル構成
+
+- `dist/client-host.js` - Client Host 本体
+- `dist/claude-bridge-client-host.bat` - Windows ランチャー
+- `dist/setup.js` - セットアップ CLI
+- `%APPDATA%/claude-bridge/config.json` - 設定ファイル
+
+### 今後の課題
+
+- [ ] Desktop 対応（Desktop の Named Pipe を調査）
+- [ ] ターゲット切り替え UI
+- [ ] 自動起動サービス化
+
 ## 参考情報
 
 ### Native Host マニフェスト場所

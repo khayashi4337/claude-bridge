@@ -11,9 +11,12 @@ import { createInstaller, generateManifest } from '../../installer';
 
 /**
  * デフォルト拡張 ID（Claude in Chrome）
+ * Claude Desktop と Claude Code の両方で使用される ID
  */
 const DEFAULT_EXTENSION_IDS = [
-  'mcbljkjpefekbpfpiondclejkdjfcpam', // Claude in Chrome (推定)
+  'fcoeoabgfenejglbffodgkkbkcdhcgfn',  // Claude Code / Claude in Chrome
+  'dihbgbndebgnbjfmelmegjepbnkhlgni',  // Claude Desktop
+  'dngcpimnedloihjnnfngkgjoidhnaolf',  // Claude Desktop (alt)
 ];
 
 /**
@@ -67,9 +70,9 @@ export function createInstallCommand(): Command {
   install.description('Install Claude Bridge as a Native Messaging Host');
 
   install
-    .option('--extension-id <id>', 'Chrome extension ID to allow', DEFAULT_EXTENSION_IDS[0])
+    .option('--extension-id <ids...>', 'Chrome extension IDs to allow (can specify multiple)')
     .option('--force', 'Force reinstall even if already installed')
-    .action(async (options: { extensionId: string; force?: boolean }) => {
+    .action(async (options: { extensionId?: string[]; force?: boolean }) => {
       console.log('Installing Claude Bridge...');
       console.log('');
 
@@ -88,11 +91,16 @@ export function createInstallCommand(): Command {
         // 実行ファイルのパスを取得
         const executablePath = getExecutablePath();
 
+        // Extension ID を決定
+        const extensionIds = options.extensionId && options.extensionId.length > 0
+          ? options.extensionId
+          : DEFAULT_EXTENSION_IDS;
+
         // マニフェストを生成
         showProgress('Creating manifest', 'pending');
         const manifest = generateManifest({
           executablePath,
-          extensionIds: [options.extensionId],
+          extensionIds,
         });
         showProgress('Creating manifest', 'done');
 
@@ -106,7 +114,8 @@ export function createInstallCommand(): Command {
         console.log('');
         console.log('Configuration:');
         console.log(`  Executable: ${executablePath}`);
-        console.log(`  Extension ID: ${options.extensionId}`);
+        console.log(`  Extension IDs: ${extensionIds.length} registered`);
+        extensionIds.forEach(id => console.log(`    - ${id}`));
         console.log(`  Manifest: ${installer.getManifestPath(hostName)}`);
 
       } catch (error) {
