@@ -4,31 +4,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a new project (`study_chrome`) - currently an empty workspace awaiting initialization.
+**Claude Bridge** - Chrome 拡張「Claude in Chrome」と Claude 製品（Desktop / Code CLI）の接続を制御するプロキシシステム
 
-## Getting Started
+### 主な目的
 
-This project needs to be initialized. Based on the project name, this may involve Chrome/Chromium-related development (extension development, browser automation, or Chromium source study).
+1. Claude Desktop と Claude Code の Native Messaging Host 競合問題の解決
+2. 接続先の動的切り替え機能
+3. トラブルシューティングツールの提供
 
-### Common Setup Paths
+## Quick Start
 
-**For Chrome Extension Development:**
+### 拡張機能の状態確認
+
+セッション開始時に Chrome 拡張が有効か確認:
+
 ```bash
-# Initialize npm project
-npm init -y
+# 通常出力
+node scripts/check-claude-extension.js
 
-# Create extension structure
-mkdir -p src/{background,content,popup}
+# JSON 出力
+node scripts/check-claude-extension.js --json
+
+# 無効な場合
+# chrome://extensions/?id=fcoeoabgfenejglbffodgkkbkcdhcgfn で有効化
 ```
 
-**For Puppeteer/Playwright Browser Automation:**
+### ビルド
+
 ```bash
-npm init -y
-npm install puppeteer  # or playwright
+npm run build
 ```
 
-## Current State
+### テスト
 
-- No source code, build system, or tests configured yet
-- No git repository initialized
-- Project structure to be determined based on development goals
+```bash
+npm test
+```
+
+## Architecture
+
+```
+Chrome Extension (fcoeoabgfenejglbffodgkkbkcdhcgfn)
+    │
+    ▼ Native Messaging (stdin/stdout)
+Client Host (claude-bridge-client-host.bat)
+    │
+    ▼ Named Pipe (client connection)
+CLI's Pipe (\\.\pipe\claude-mcp-browser-bridge-{user})
+    │
+    ▼
+Claude Code CLI (listening)
+```
+
+## Key Files
+
+| ファイル | 説明 |
+|----------|------|
+| `scripts/check-claude-extension.js` | 拡張機能ステータスチェッカー |
+| `src/client-host/` | Client Host 実装 |
+| `src/pipe-proxy/` | Named Pipe プロキシ |
+| `docs/investigation-notes.md` | 調査メモ・技術詳細 |
+
+## Known Issues
+
+### GitHub Issue #20887
+
+Claude Desktop と Claude Code の両方がインストールされていると、
+Chrome 拡張が Desktop に接続してしまい、Code の MCP ツールが動作しない。
+
+**回避策**: Desktop のマニフェストを編集して Code のホストを指すように変更
+
+詳細: `docs/investigation-notes.md`
+
+## Chrome Profile
+
+- 拡張機能は **Profile 1** にインストール
+- Preferences: `%LOCALAPPDATA%\Google\Chrome\User Data\Profile 1\Secure Preferences`
+
+## Extension ID
+
+- Claude in Chrome: `fcoeoabgfenejglbffodgkkbkcdhcgfn`
+
+## 関連リンク
+
+- [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+- [GitHub Issue #20887](https://github.com/anthropics/claude-code/issues/20887)

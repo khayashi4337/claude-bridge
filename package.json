@@ -35,12 +35,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/claude-bridge.git"
+    "url": "https://github.com/khayashi4337/claude-bridge.git"
   },
   "bugs": {
-    "url": "https://github.com/anthropics/claude-bridge/issues"
+    "url": "https://github.com/khayashi4337/claude-bridge/issues"
   },
-  "homepage": "https://github.com/anthropics/claude-bridge#readme",
+  "homepage": "https://github.com/khayashi4337/claude-bridge#readme",
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",

@@ -280,3 +280,161 @@ node dist/setup.js uninstall
 ### Extension IDs
 - Claude Code / Claude in Chrome: `fcoeoabgfenejglbffodgkkbkcdhcgfn`
 - Claude Desktop: `dihbgbndebgnbjfmelmegjepbnkhlgni`, `dngcpimnedloihjnnfngkgjoidhnaolf`
+
+---
+
+## Chrome 拡張機能のステータス検出（2026-02-02）
+
+### 問題
+
+PC シャットダウンや Chrome 再起動後、拡張機能が無効化されていることがあり、
+MCP ツールが動作しない原因となる。毎回手動で確認するのは非効率。
+
+### 発見: Secure Preferences による検出
+
+Chrome の `Secure Preferences` ファイルから拡張機能の有効/無効を検出できる。
+
+**ファイル場所**:
+```
+Windows: %LOCALAPPDATA%\Google\Chrome\User Data\{Profile}\Secure Preferences
+macOS:   ~/Library/Application Support/Google/Chrome/{Profile}/Secure Preferences
+Linux:   ~/.config/google-chrome/{Profile}/Secure Preferences
+```
+
+**検出ロジック**:
+```javascript
+// extensions.settings[extension_id].disable_reasons を確認
+const extSettings = prefs.extensions.settings[EXTENSION_ID];
+
+if (!extSettings.disable_reasons || extSettings.disable_reasons.length === 0) {
+  // 有効
+} else {
+  // 無効 (disable_reasons に値がある)
+}
+```
+
+**disable_reasons の値**:
+| 値 | 意味 |
+|----|------|
+| `null` / `undefined` | 有効 |
+| `[]` (空配列) | 有効 |
+| `[1]` | 無効（ユーザーによる無効化） |
+| その他 | 無効（理由は値による） |
+
+### 作成したツール
+
+#### 1. Bash スクリプト版
+```bash
+./scripts/check-claude-extension.sh
+```
+
+#### 2. Node.js 版（JSON 出力対応）
+```bash
+# 通常出力
+node scripts/check-claude-extension.js
+
+# JSON 出力
+node scripts/check-claude-extension.js --json
+```
+
+#### 終了コード
+| コード | 状態 |
+|--------|------|
+| 0 | ✅ 有効 (enabled) |
+| 1 | ❌ 無効 (disabled) |
+| 2 | 未インストール |
+| 3 | エラー |
+
+#### 出力例
+```
+==================================
+Chrome Extension Status Checker
+==================================
+Extension: Claude in Chrome
+ID: fcoeoabgfenejglbffodgkkbkcdhcgfn
+Profile: Profile 1
+----------------------------------
+STATUS: ENABLED ✅
+Version: 1.0.41
+```
+
+### 使用場面
+
+1. **セッション開始時の確認**
+   ```bash
+   node scripts/check-claude-extension.js || echo "拡張機能を有効化してください"
+   ```
+
+2. **自動化スクリプトでの事前チェック**
+   ```bash
+   if ! node scripts/check-claude-extension.js > /dev/null 2>&1; then
+     echo "Chrome拡張が無効です: chrome://extensions/?id=fcoeoabgfenejglbffodgkkbkcdhcgfn"
+     exit 1
+   fi
+   ```
+
+---
+
+## GitHub Issue #20887 詳細（2026-02-02 更新）
+
+### Issue 概要
+
+**タイトル**: Chrome MCP: Extension connects to Claude Desktop instead of Claude Code when both are installed
+
+**状態**: Open（未解決）
+
+**ラベル**: `area:mcp`, `bug`, `has repro`, `platform:macos`
+
+### 問題の詳細
+
+Claude Desktop と Claude Code の両方がインストールされている場合、
+Chrome 拡張が Claude Desktop の Native Messaging Host に接続してしまい、
+Claude Code の MCP ブラウザツールが動作しない。
+
+### 技術的原因
+
+両アプリが異なる名前で Native Host を登録しているが、
+Chrome 拡張は Desktop の名前 (`com.anthropic.claude_browser_extension`) を要求する:
+
+| アプリ | Host 名 | パス |
+|--------|---------|------|
+| Desktop | `com.anthropic.claude_browser_extension` | `.../Claude.app/.../chrome-native-host` |
+| Code | `com.anthropic.claude_code_browser_extension` | `~/.claude/chrome/chrome-native-host` |
+
+### 公式 Workaround
+
+Desktop のマニフェストを編集して Code のホストを指すように変更:
+
+**macOS**:
+```bash
+# バックアップ
+cp ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.anthropic.claude_browser_extension.json \
+   ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.anthropic.claude_browser_extension.json.bak
+
+# 編集: path を ~/.claude/chrome/chrome-native-host に変更
+
+# Desktop の Native Host プロセスを終了
+pkill -f "/Applications/Claude.app/Contents/Helpers/chrome-native-host"
+
+# Chrome 再起動
+```
+
+**Windows**:
+```powershell
+# マニフェスト場所
+%LOCALAPPDATA%\Google\Chrome\NativeMessagingHosts\com.anthropic.claude_browser_extension.json
+
+# path を ~/.claude/chrome/chrome-native-host.bat に変更
+```
+
+### 推奨修正（Anthropic へのフィードバック）
+
+1. Chrome 拡張が接続先（Desktop vs Code）を検出して適切なホストに接続
+2. 単一の共有 Native Host で両方に対応
+3. ユーザーが接続先を選択できる UI を追加
+
+### 関連 Issue
+
+- #20546 - 同様の競合問題
+- #20341 - Windows での競合
+- #21363 - Windows Named Pipe EADDRINUSE エラー

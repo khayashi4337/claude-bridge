@@ -1,151 +1,84 @@
 # Claude Bridge
 
-Chrome拡張「Claude in Chrome」と Claude製品（Desktop / Code CLI）の接続競合を解決するプロキシシステム。
+> ⚠️ **WIP (Work In Progress)** - このプロジェクトは開発中です。本番環境での使用は推奨しません。
+
+Chrome拡張「Claude in Chrome」と Claude製品（Desktop / Code CLI）の接続問題を調査・診断するためのツール群です。
 
 ## 背景
 
-Claude Desktop と Claude Code CLI が同時に起動していると、Chrome拡張がどちらに接続するか制御できません。Claude Bridge はこの問題を解決し、ユーザーが接続先を自由に選択できるようにします。
+Claude Desktop と Claude Code CLI の両方がインストールされている環境で、Chrome拡張がどちらに接続するか制御できない問題があります（[GitHub Issue #20887](https://github.com/anthropics/claude-code/issues/20887)）。
 
-## インストール
+このリポジトリは、問題の調査と診断ツールの提供を目的としています。
 
-```bash
-# npm でインストール
-npm install -g claude-bridge
+## 現在の状態
 
-# インストール
-claude-bridge install
-```
+| 機能 | 状態 |
+|------|------|
+| 問題の調査・分析 | ✅ 完了 |
+| 拡張機能ステータスチェッカー | ✅ 動作 |
+| Native Host 診断ツール | 🚧 未実装 |
+| Named Pipe 診断ツール | 🚧 未実装 |
+| 統合診断ツール | 🚧 未実装 |
+| Client Host（接続代理） | ⚠️ 実験的 |
 
-または npx で直接実行:
+## クイックスタート
 
-```bash
-npx claude-bridge install
-```
-
-インストール後、Chrome を再起動してください。
-
-## 使い方
-
-### 状態確認
+### 拡張機能の状態確認
 
 ```bash
-claude-bridge status
+# Node.js 版
+node scripts/check-claude-extension.js
+
+# JSON 出力
+node scripts/check-claude-extension.js --json
+
+# Bash 版
+./scripts/check-claude-extension.sh
 ```
 
-出力例:
+**出力例:**
 ```
-╔══════════════════════════════════════════════════╗
-║ Claude Bridge Status                              ║
-╠══════════════════════════════════════════════════╣
-║ Bridge:      installed ✓                          ║
-║ Running:     yes                                  ║
-║ Target:      auto → cli                           ║
-╠══════════════════════════════════════════════════╣
-║ Claude Desktop                                    ║
-║   Process:   running ✓                            ║
-║   IPC:       connectable ✓                        ║
-╠══════════════════════════════════════════════════╣
-║ Claude CLI                                        ║
-║   Process:   running ✓                            ║
-║   IPC:       connectable ✓  ← active              ║
-╚══════════════════════════════════════════════════╝
+==================================
+Chrome Extension Status Checker
+==================================
+Extension: Claude in Chrome
+ID: fcoeoabgfenejglbffodgkkbkcdhcgfn
+Profile: Profile 1
+----------------------------------
+STATUS: ENABLED ✅
+Version: 1.0.41
 ```
 
-### 接続先の設定
+## 既知の問題
 
-```bash
-# CLI を優先
-claude-bridge config set target cli
+### Native Host 競合（Issue #20887）
 
-# Desktop を優先
-claude-bridge config set target desktop
+Claude Desktop と Claude Code が同じ Native Messaging Host 名を使用するため、両方がインストールされていると競合が発生します。
 
-# 自動選択（デフォルト）
-claude-bridge config set target auto
-```
+**症状:**
+- Claude Code の MCP ブラウザツールが動作しない
+- "Browser extension is not connected" エラー
 
-### 設定の確認
+**暫定的な回避策:**
+1. Claude Desktop をアンインストール
+2. または、Native Host マニフェストを手動で編集
 
-```bash
-# 全設定を表示
-claude-bridge config list
+詳細は [docs/investigation-notes.md](docs/investigation-notes.md) を参照してください。
 
-# 特定の設定を取得
-claude-bridge config get target
+## ドキュメント
 
-# 設定をリセット
-claude-bridge config reset
-```
-
-### アンインストール
-
-```bash
-claude-bridge uninstall
-```
-
-## 設定オプション
-
-| 設定 | 説明 | デフォルト |
-|------|------|-----------|
-| `target` | 接続先 (`auto`, `cli`, `desktop`) | `auto` |
-| `fallback.enabled` | フォールバックを有効化 | `true` |
-| `fallback.order` | 優先順序 | `["cli", "desktop"]` |
-| `timeouts.connection` | 接続タイムアウト (ms) | `5000` |
-| `timeouts.healthCheck` | ヘルスチェックタイムアウト (ms) | `2000` |
-| `detection.interval` | 検出ポーリング間隔 (ms) | `5000` |
-
-## 動作原理
-
-```
-Chrome Extension ──→ Claude Bridge ──→ Desktop (設定による)
-                                   └──→ CLI     (設定による)
-```
-
-Claude Bridge は Native Messaging Host として動作し、Chrome拡張からのメッセージを受信して、設定に基づいて適切な Claude 製品に転送します。
-
-## 対応環境
-
-- **OS**: Windows, macOS
-- **Node.js**: 18.0.0 以上
-- **Chrome**: 最新版推奨
-
-## トラブルシューティング
-
-### Bridge がインストールされない
-
-```bash
-# 強制再インストール
-claude-bridge install --force
-```
-
-### 接続できない
-
-1. Claude Desktop または CLI が起動しているか確認
-2. `claude-bridge status` で状態を確認
-3. Chrome を再起動
-
-### 設定ファイルの場所
-
-- **Windows**: `%APPDATA%\claude-bridge\config.json`
-- **macOS**: `~/Library/Application Support/claude-bridge/config.json`
-
-### ログの確認
-
-- **Windows**: `%APPDATA%\claude-bridge\logs\`
-- **macOS**: `~/Library/Application Support/claude-bridge/logs/`
+- [調査メモ](docs/investigation-notes.md) - 技術的な調査結果
+- [問題の棚卸し](docs/problem-inventory.md) - 解決すべき問題の整理
+- [Native Messaging Protocol](docs/research/native-messaging.md) - プロトコル仕様
 
 ## 開発
 
 ```bash
-# クローン
-git clone https://github.com/your-repo/claude-bridge.git
-cd claude-bridge
-
-# 依存関係インストール
+# 依存関係のインストール
 npm install
 
 # ビルド
-npm run build:all
+npm run build
 
 # テスト
 npm test
@@ -154,6 +87,15 @@ npm test
 npm run typecheck
 ```
 
+## 関連リンク
+
+- [GitHub Issue #20887](https://github.com/anthropics/claude-code/issues/20887) - Desktop/Code 競合問題
+- [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) - 公式ドキュメント
+
 ## ライセンス
 
 MIT
+
+---
+
+**注意:** このプロジェクトは Anthropic の公式プロジェクトではありません。個人による調査・実験プロジェクトです。
