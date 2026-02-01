@@ -4,6 +4,10 @@
 
 https://github.com/anthropics/claude-code/issues/20887
 
+## ステータス
+
+✅ **投稿完了** (2026-02-02)
+
 ---
 
 ## 投稿内容（英語）
